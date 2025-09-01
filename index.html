@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>技能覆盖分析大屏</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --primary: #4cc9f0;
+            --bg: #0d1b2a;
+            --bg2: #1b263b;
+            --text: #fff;
+            --muted: #ccc;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+
+        .container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            width: 300px;
+            background: var(--bg2);
+            padding: 20px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            overflow-y: auto;
+        }
+
+        .main-content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        h1, h2, h3 {
+            color: var(--primary);
+        }
+
+        .metric-card {
+            background: var(--bg2);
+            padding: 20px;
+            border-radius: 16px;
+            text-align: center;
+            box-shadow: 0 0 15px rgba(0,0,0,0.4);
+            margin-bottom: 20px;
+        }
+
+        .metric-value {
+            font-size: 36px;
+            font-weight: 800;
+            color: var(--primary);
+        }
+
+        .metric-label {
+            font-size: 14px;
+            color: var(--muted);
+        }
+
+        hr {
+            border: none;
+            border-top: 1px solid rgba(255,255,255,.12);
+            margin: 16px 0;
+        }
+
+        .card {
+            background: var(--bg2);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.2);
+        }
+
+        .chart-container {
+            height: 400px;
+            width: 100%;
+        }
+
+        button {
+            background: var(--primary);
+            color: #000;
+            border: none;
+            border-radius: 10px;
+            padding: 10px 15px;
+            font-weight: 700;
+            cursor: pointer;
+            width: 100%;
+            margin: 5px 0;
+        }
+
+        button:hover {
+            background: #4895ef;
+            color: #fff;
+        }
+
+        input[type="file"] {
+            width: 100%;
+            margin: 10px 0;
+            color: var(--text);
+        }
+
+        select, .multiselect {
+            width: 100%;
+            padding: 10px;
+            border-radius: 5px;
+            background: var(--bg);
+            color: var(--text);
+            border: 1px solid var(--primary);
+            margin: 5px 0;
+        }
+
+        .view-section {
+            display: none;
+        }
+
+        .view-section.active {
+            display: block;
+        }
+
+        .columns {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .column {
+            flex: 1;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+            background: var(--bg2);
+        }
+
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        th {
+            background: var(--bg);
+        }
+
+        .multiselect-container {
+            position: relative;
+        }
+
+        .multiselect-options {
+            position: absolute;
+            width: 100%;
+            background: var(--bg2);
+            border: 1px solid var(--primary);
+            border-radius: 5px;
+            z-index: 100;
+            max-height: 200px;
+            overflow-y: auto;
+            display: none;
+        }
+
+        .multiselect-options label {
+            display: block;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+
+        .multiselect-options label:hover {
+            background: var(--primary);
+            color: #000;
+        }
+
+        .selected-items {
+            margin-top: 5px;
+        }
+
+        .selected-item {
+            display: inline-block;
+            background: var(--primary);
+            color: #000;
+            padding: 2px 5px;
+            border-radius: 3px;
+            margin: 2px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 侧边栏 -->
+        <div class="sidebar">
+            <h2>📊 数据控制区</h2>
+            
+            <div class="card">
+                <input type="file" id="fileUpload" accept=".xlsx,.xls">
+                
+                <h3>选择时间点（月或季）</h3>
+                <div class="multiselect-container">
+                    <div class="multiselect" id="timeSelector">选择时间点...</div>
+                    <div class="multiselect-options" id="timeOptions"></div>
+                </div>
+                <div class="selected-items" id="selectedTimes"></div>
+                
+                <h3>切换视图</h3>
+                <select id="viewSelector">
+                    <option value="edit">编辑数据</option>
+                    <option value="carousel">大屏轮播</option>
+                    <option value="single">单页模式</option>
+                    <option value="compare">能力对比</option>
+                    <option value="all">显示所有视图</option>
+                </select>
+                
+                <div id="singlePageSelector" style="display: none;">
+                    <h3>单页查看</h3>
+                    <select id="sectionSelector">
+                        <option value="ranking">人员完成任务数量排名</option>
+                        <option value="coverage">任务覆盖率分布</option>
+                        <option value="hot">任务掌握情况（热门任务）</option>
+                        <option value="heatmap">任务-人员热力图</option>
+                        <option value="radar">人员对比（雷达图）</option>
+                    </select>
+                </div>
+                
+                <div id="personSelector" style="display: none;">
+                    <h3>选择人员</h3>
+                    <div class="multiselect-container">
+                        <div class="multiselect" id="personMultiselect">选择人员...</div>
+                        <div class="multiselect-options" id="personOptions"></div>
+                    </div>
+                    <div class="selected-items" id="selectedPersons"></div>
+                </div>
+                
+                <button id="downloadTemplate">下载模板</button>
+                <button id="saveData">保存数据</button>
+            </div>
+        </div>
+
+        <!-- 主内容区 -->
+        <div class="main-content">
+            <h1>📊 技能覆盖分析大屏</h1>
+            
+            <!-- 指标卡片 -->
+            <div class="columns" id="metrics">
+                <div class="column">
+                    <div class="metric-card">
+                        <div class="metric-value" id="totalTasks">0</div>
+                        <div class="metric-label">任务数</div>
+                    </div>
+                </div>
+                <div class="column">
+                    <div class="metric-card">
+                        <div class="metric-value" id="totalPeople">0</div>
+                        <div class="metric-label">人数</div>
+                    </div>
+                </div>
+                <div class="column">
+                    <div class="metric-card">
+                        <div class="metric-value" id="topPerson">-</div>
+                        <div class="metric-label">覆盖率最高</div>
+                    </div>
+                </div>
+                <div class="column">
+                    <div class="metric-card">
+                        <div class="metric-value" id="avgScore">0</div>
+                        <div class="metric-label">平均数</div>
+                    </div>
+                </div>
+            </div>
+            
+            <hr>
+            
+            <!-- 视图区域 -->
+            <div class="view-section active" id="editView">
+                <h2>当前数据表（行合并后）</h2>
+                <div class="card">
+                    <div id="dataTable"></div>
+                </div>
+            </div>
+            
+            <div class="view-section" id="carouselView">
+                <h2>大屏轮播</h2>
+                <div class="card">
+                    <div id="carouselChart" class="chart-container"></div>
+                </div>
+            </div>
+            
+            <div class="view-section" id="singleView">
+                <h2 id="singleViewTitle">单页模式</h2>
+                <div class="card">
+                    <div id="singleChart" class="chart-container"></div>
+                </div>
+            </div>
+            
+            <div class="view-section" id="compareView">
+                <h2>能力对比</h2>
+                <div class="card">
+                    <div id="compareChart" class="chart-container"></div>
+                </div>
+            </div>
+            
+            <div class="view-section" id="allView">
+                <h2>所有视图</h2>
+                
+                <h3>人员完成任务数量排名</h3>
+                <div class="card">
+                    <div id="chart1" class="chart-container"></div>
+                </div>
+                
+                <h3>任务覆盖率分布</h3>
+                <div class="card">
+                    <div id="chart2" class="chart-container"></div>
+                </div>
+                
+                <h3>任务掌握情况（热门任务）</h3>
+                <div class="card">
+                    <div id="chart3" class="chart-container"></div>
+                </div>
+                
+                <h3>人员对比（雷达图）</h3>
+                <div class="card">
+                    <div id="chart4" class="chart-container"></div>
+                </div>
+                
+                <h3>任务-人员热力图</h3>
+                <div class="card">
+                    <div id="chart5" class="chart-container"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let sheetData = {};
+        let currentSheets = [];
+        let currentData = [];
+        let personColumns = [];
+        let taskColumn = "明细";
+        
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 初始化事件监听
+            document.getElementById('fileUpload').addEventListener('change', handleFileUpload);
+            document.getElementById('viewSelector').addEventListener('change', handleViewChange);
+            document.getElementById('sectionSelector').addEventListener('change', updateSingleView);
+            document.getElementById('downloadTemplate').addEventListener('click', downloadTemplate);
+            document.getElementById('saveData').addEventListener('click', saveData);
+            
+            // 初始化多选组件
+            initMultiselect('timeOptions', 'selectedTimes', handleTimeSelection);
+            
+            // 显示初始视图
+            showView('edit');
+            
+            // 加载示例数据
+            loadExampleData();
+        });
+        
+        // 处理文件上传
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+                
+                // 清空现有数据
+                sheetData = {};
+                currentSheets = [];
+                
+                // 处理每个工作表
+                workbook.SheetNames.forEach(sheetName => {
+                    const worksheet = workbook.Sheets[sheetName];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet);
+                    sheetData[sheetName] = jsonData;
+                });
+                
+                // 更新时间点选择
+                updateTimeOptions();
+                
+                // 默认选择前3个时间点（如果有的话）
+                const sheetNames = Object.keys(sheetData);
+                const defaultSelection = sheetNames.slice(0, Math.min(3, sheetNames.length));
+                setSelectedTimes(defaultSelection);
+                
+                // 处理数据
+                processData();
+            };
+            reader.readAsArrayBuffer(file);
+        }
+        
+        // 加载示例数据
+        function loadExampleData() {
+            sheetData = {
+                "示例": [
+                    { "编号": 1, "明细": "任务A", "张三": 1, "李四": 0, "王五": 1 },
+                    { "编号": 2, "明细": "任务B", "张三": 0, "李四": 1, "王五": 1 },
+                    { "编号": 3, "明细": "任务C", "张三": 1, "李四": 1, "王五": 0 }
+                ]
+            };
+            
+            updateTimeOptions();
+            setSelectedTimes(["示例"]);
+            processData();
+        }
+        
+        // 更新时间点选项
+        function updateTimeOptions() {
+            const timeOptions = document.getElementById('timeOptions');
+            timeOptions.innerHTML = '';
+            
+            Object.keys(sheetData).forEach(sheetName => {
+                const label = document.createElement('label');
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = sheetName;
+                checkbox.checked = currentSheets.includes(sheetName);
+                
+                label.appendChild(checkbox);
+                label.appendChild(document.createTextNode(sheetName));
+                timeOptions.appendChild(label);
+            });
+        }
+        
+        // 设置选中的时间点
+        function setSelectedTimes(times) {
+            currentSheets = times;
+            
+            // 更新UI
+            const selectedTimes = document.getElementById('selectedTimes');
+            selectedTimes.innerHTML = '';
+            
+            times.forEach(time => {
+                const span = document.createElement('span');
+                span.className = 'selected-item';
+                span.textContent = time;
+                selectedTimes.appendChild(span);
+            });
+            
+            // 处理数据
+            processData();
+        }
+        
+        // 处理时间点选择
+        function handleTimeSelection(selectedValues) {
+            setSelectedTimes(selectedValues);
+        }
+        
+        // 处理数据
+        function processData() {
+            if (currentSheets.length === 0) return;
+            
+            // 合并选中的工作表数据
+            let mergedData = [];
+            currentSheets.forEach(sheetName => {
+                if (sheetData[sheetName]) {
+                    mergedData = mergedData.concat(sheetData[sheetName]);
+                }
+            });
+            
+            // 按任务名称分组，取最大值
+            const taskMap = {};
+            mergedData.forEach(row => {
+                const taskName = row[taskColumn];
+                if (!taskMap[taskName]) {
+                    taskMap[taskName] = {...row};
+                } else {
+                    // 对于每个人，取最大值
+                    Object.keys(row).forEach(key => {
+                        if (key !== "编号" && key !== taskColumn) {
+                            taskMap[taskName][key] = Math.max(taskMap[taskName][key] || 0, row[key] || 0);
+                        }
+                    });
+                }
+            });
+            
+            // 转换回数组
+            currentData = Object.values(taskMap);
+            
+            // 提取人员列
+            personColumns = [];
+            if (currentData.length > 0) {
+                personColumns = Object.keys(currentData[0]).filter(
+                    key => key !== "编号" && key !== taskColumn
+                );
+            }
+            
+            // 更新指标
+            updateMetrics();
+            
+            // 更新数据表格
+            renderDataTable();
+            
+            // 更新人员选择器
+            updatePersonSelector();
+            
+            // 更新图表
+            updateAllCharts();
+        }
+        
+        // 更新指标
+        function updateMetrics() {
+            document.getElementById('totalTasks').textContent = currentData.length;
+            document.getElementById('totalPeople').textContent = personColumns.length;
+            
+            // 计算每个人的总分
+            const personScores = {};
+            personColumns.forEach(person => {
+                personScores[person] = 0;
+                currentData.forEach(row => {
+                    personScores[person] += row[person] || 0;
+                });
+            });
+            
+            // 找出最高分的人
+            let topPerson = "-";
+            let maxScore = 0;
+            Object.keys(personScores).forEach(person => {
+                if (personScores[person] > maxScore) {
+                    maxScore = personScores[person];
+                    topPerson = person;
+                }
+            });
+            
+            document.getElementById('topPerson').textContent = topPerson;
+            
+            // 计算平均分
+            const totalScore = Object.values(personScores).reduce((a, b) => a + b, 0);
+            const avgScore = personColumns.length > 0 ? (totalScore / personColumns.length).toFixed(1) : "0";
+            document.getElementById('avgScore').textContent = avgScore;
+        }
+        
+        // 渲染数据表格
+        function renderDataTable() {
+            const tableContainer = document.getElementById('dataTable');
+            
+            if (currentData.length === 0) {
+                tableContainer.innerHTML = '<p>暂无数据</p>';
+                return;
+            }
+            
+            // 创建表格
+            const table = document.createElement('table');
+            
+            // 创建表头
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+            
+            // 添加列头
+            Object.keys(currentData[0]).forEach(key => {
+                const th = document.createElement('th');
+                th.textContent = key;
+                headerRow.appendChild(th);
+            });
+            
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+            
+            // 创建表格主体
+            const tbody = document.createElement('tbody');
+            
+            // 添加数据行
+            currentData.forEach(row => {
+                const tr = document.createElement('tr');
+                
+                Object.keys(row).forEach(key => {
+                    const td = document.createElement('td');
+                    td.textContent = row[key];
+                    tr.appendChild(td);
+                });
+                
+                tbody.appendChild(tr);
+            });
+            
+            table.appendChild(tbody);
+            tableContainer.innerHTML = '';
+            tableContainer.appendChild(table);
+        }
+        
+        // 更新人员选择器
+        function updatePersonSelector() {
+            const personOptions = document.getElementById('personOptions');
+            personOptions.innerHTML = '';
+            
+            personColumns.forEach(person => {
+                const label = document.createElement('label');
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = person;
+                
+                label.appendChild(checkbox);
+                label.appendChild(document.createTextNode(person));
+                personOptions.appendChild(label);
+            });
+            
+            // 初始化多选（如果尚未初始化）
+            if (!window.personMultiselectInitialized) {
+                initMultiselect('personOptions', 'selectedPersons', handlePersonSelection);
+                window.personMultiselectInitialized = true;
+            }
+        }
+        
+        // 处理人员选择
+        function handlePersonSelection(selectedValues) {
+            // 在能力对比视图中使用
+            if (document.getElementById('viewSelector').value === 'compare') {
+                updateCompareChart(selectedValues);
+            }
+            
+            // 在单页模式的雷达图中使用
+            if (document.getElementById('viewSelector').value === 'single' && 
+                document.getElementById('sectionSelector').value === 'radar') {
+                updateSingleView();
+            }
+        }
+        
+        // 初始化多选组件
+        function initMultiselect(optionsId, selectedId, changeCallback) {
+            const multiselect = document.getElementById(optionsId).previousElementSibling;
+            const options = document.getElementById(optionsId);
+            const selected = document.getElementById(selectedId);
+            
+            // 点击多选框显示/隐藏选项
+            multiselect.addEventListener('click', function() {
+                options.style.display = options.style.display === 'block' ? 'none' : 'block';
+            });
+            
+            // 选项点击事件
+            options.addEventListener('click', function(e) {
+                if (e.target.tagName === 'INPUT') {
+                    updateSelectedItems();
+                    
+                    // 获取所有选中的值
+                    const selectedValues = [];
+                    options.querySelectorAll('input:checked').forEach(checkbox => {
+                        selectedValues.push(checkbox.value);
+                    });
+                    
+                    // 调用回调函数
+                    if (changeCallback) {
+                        changeCallback(selectedValues);
+                    }
+                }
+            });
+            
+            // 更新选中项显示
+            function updateSelectedItems() {
+                selected.innerHTML = '';
+                
+                options.querySelectorAll('input:checked').forEach(checkbox => {
+                    const span = document.createElement('span');
+                    span.className = 'selected-item';
+                    span.textContent = checkbox.value;
+                    selected.appendChild(span);
+                });
+            }
+            
+            // 点击页面其他地方隐藏选项
+            document.addEventListener('click', function(e) {
+                if (!multiselect.contains(e.target) && !options.contains(e.target)) {
+                    options.style.display = 'none';
+                }
+            });
+        }
+        
+        // 处理视图切换
+        function handleViewChange() {
+            const view = document.getElementById('viewSelector').value;
+            
+            // 显示/隐藏相关控件
+            document.getElementById('singlePageSelector').style.display = 
+                view === 'single' ? 'block' : 'none';
+            document.getElementById('personSelector').style.display = 
+                (view === 'compare' || view === 'single') ? 'block' : 'none';
+            
+            // 显示选中的视图
+            showView(view);
+            
+            // 更新图表
+            updateAllCharts();
+        }
+        
+        // 显示指定视图
+        function showView(view) {
+            // 隐藏所有视图
+            document.querySelectorAll('.view-section').forEach(section => {
+                section.classList.remove('active');
+            });
+            
+            // 显示选中的视图
+            document.getElementById(view + 'View').classList.add('active');
+            
+            // 特殊处理
+            if (view === 'single') {
+                updateSingleView();
+            } else if (view === 'compare') {
+                // 默认选择前两个人
+                const defaultSelection = personColumns.slice(0, Math.min(2, personColumns.length));
+                setSelectedPersons(defaultSelection);
+                updateCompareChart(defaultSelection);
+            } else if (view === 'carousel') {
+                startCarousel();
+            }
+        }
+        
+        // 设置选中的人员
+        function setSelectedPersons(persons) {
+            // 更新复选框状态
+            const options = document.getElementById('personOptions');
+            options.querySelectorAll('input').forEach(checkbox => {
+                checkbox.checked = persons.includes(checkbox.value);
+            });
+            
+            // 更新显示
+            const selected = document.getElementById('selectedPersons');
+            selected.innerHTML = '';
+            
+            persons.forEach(person => {
+                const span = document.createElement('span');
+                span.className = 'selected-item';
+                span.textContent = person;
+                selected.appendChild(span);
+            });
+        }
+        
+        // 更新单页视图
+        function updateSingleView() {
+            const section = document.getElementById('sectionSelector').value;
+            const chartDiv = document.getElementById('singleChart');
+            const title = document.getElementById('singleViewTitle');
+            
+            // 设置标题
+            title.textContent = document.getElementById('sectionSelector').options[
+                document.getElementById('sectionSelector').selectedIndex
+            ].text;
+            
+            // 根据选择显示不同的图表
+            switch(section) {
+                case 'ranking':
+                    renderBarChart(chartDiv);
+                    break;
+                case 'coverage':
+                    renderPieChart(chartDiv);
+                    break;
+                case 'hot':
+                    renderHotTasksChart(chartDiv);
+                    break;
+                case 'heatmap':
+                    renderHeatmap(chartDiv);
+                    break;
+                case 'radar':
+                    // 获取选中的人员
+                    const selectedPersons = [];
+                    document.getElementById('personOptions').querySelectorAll('input:checked').forEach(checkbox => {
+                        selectedPersons.push(checkbox.value);
+                    });
+                    renderRadarChart(chartDiv, selectedPersons);
+                    break;
+            }
+        }
+        
+        // 更新对比图表
+        function updateCompareChart(selectedPersons) {
+            renderRadarChart(document.getElementById('compareChart'), selectedPersons);
+        }
+        
+        // 更新所有图表
+        function updateAllCharts() {
+            if (currentData.length === 0) return;
+            
+            renderBarChart(document.getElementById('chart1'));
+            renderPieChart(document.getElementById('chart2'));
+            renderHotTasksChart(document.getElementById('chart3'));
+            
+            // 默认显示前3个人
+            const defaultPersons = personColumns.slice(0, Math.min(3, personColumns.length));
+            renderRadarChart(document.getElementById('chart4'), defaultPersons);
+            
+            renderHeatmap(document.getElementById('chart5'));
+        }
+        
+        // 开始轮播
+        function startCarousel() {
+            const chartDiv = document.getElementById('carouselChart');
+            const charts = [
+                { title: "人员完成任务数量排名", render: () => renderBarChart(chartDiv) },
+                { title: "任务覆盖率分布", render: () => renderPieChart(chartDiv) },
+                { title: "任务掌握情况（热门任务）", render: () => renderHotTasksChart(chartDiv) },
+                { title: "任务-人员热力图", render: () => renderHeatmap(chartDiv) }
+            ];
+            
+            let currentIndex = 0;
+            
+            // 先显示第一个图表
+            charts[currentIndex].render();
+            document.querySelector('#carouselView h2').textContent = charts[currentIndex].title;
+            
+            // 设置轮播间隔（10秒）
+            setInterval(() => {
+                currentIndex = (currentIndex + 1) % charts.length;
+                charts[currentIndex].render();
+                document.querySelector('#carouselView h2').textContent = charts[currentIndex].title;
+            }, 10000);
+        }
+        
+        // 渲染柱状图（人员完成任务数量排名）
+        function renderBarChart(container) {
+            if (!container) return;
+            
+            // 计算每个人的总分
+            const personScores = {};
+            personColumns.forEach(person => {
+                personScores[person] = 0;
+                currentData.forEach(row => {
+                    personScores[person] += row[person] || 0;
+                });
+            });
+            
+            // 排序
+            const sortedData = Object.entries(personScores)
+                .sort((a, b) => b[1] - a[1]);
+            
+            const chart = echarts.init(container);
+            const option = {
+                backgroundColor: 'transparent',
+                tooltip: {
+                    trigger: 'axis'
+                },
+                xAxis: {
+                    type: 'category',
+                    data: sortedData.map(item => item[0]),
+                    axisLabel: {
+                        color: '#fff'
+                    }
+                },
+                yAxis: {
+                    type: 'value',
+                    axisLabel: {
+                        color: '#fff'
+                    }
+                },
+                series: [{
+                    data: sortedData.map(item => item[1]),
+                    type: 'bar',
+                    itemStyle: {
+                        color: '#4cc9f0'
+                    }
+                }]
+            };
+            
+            chart.setOption(option);
+        }
+        
+        // 渲染饼图（任务覆盖率分布）
+        function renderPieChart(container) {
+            if (!container) return;
+            
+            // 计算每个任务被多少人掌握
+            const coverageCount = {};
+            currentData.forEach(row => {
+                let count = 0;
+                personColumns.forEach(person => {
+                    if (row[person]) count++;
+                });
+                
+                if (!coverageCount[count]) {
+                    coverageCount[count] = 0;
+                }
+                coverageCount[count]++;
+            });
+            
+            // 转换为图表数据
+            const chartData = Object.entries(coverageCount).map(([count, tasks]) => ({
+                name: `${count}人掌握`,
+                value: tasks
+            }));
+            
+            const chart = echarts.init(container);
+            const option = {
+                backgroundColor: 'transparent',
+                tooltip: {
+                    trigger: 'item'
+                },
+                series: [{
+                    type: 'pie',
+                    radius: '70%',
+                    data: chartData,
+                    label: {
+                        color: '#fff'
+                    }
+                }]
+            };
+            
+            chart.setOption(option);
+        }
+        
+        // 渲染热门任务图表
+        function renderHotTasksChart(container) {
+            if (!container) return;
+            
+            // 计算每个任务被掌握的总次数
+            const taskPopularity = currentData.map(row => {
+                let count = 0;
+                personColumns.forEach(person => {
+                    if (row[person]) count++;
+                });
+                return {
+                    name: row[taskColumn],
+                    value: count
+                };
+            });
+            
+            // 按掌握次数排序
+            taskPopularity.sort((a, b) => b.value - a.value);
+            
+            const chart = echarts.init(container);
+            const option = {
+                backgroundColor: 'transparent',
+                yAxis: {
+                    type: 'category',
+                    data: taskPopularity.map(item => item.name),
+                    axisLabel: {
+                        color: '#fff'
+                    }
+                },
+                xAxis: {
+                    type: 'value',
+                    axisLabel: {
+                        color: '#fff'
+                    }
+                },
+                series: [{
+                    data: taskPopularity.map(item => item.value),
+                    type: 'bar',
+                    itemStyle: {
+                        color: '#ffb703'
+                    }
+                }]
+            };
+            
+            chart.setOption(option);
+        }
+        
+        // 渲染雷达图
+        function renderRadarChart(container, selectedPersons) {
+            if (!container || !selectedPersons || selectedPersons.length === 0) return;
+            
+            // 准备数据
+            const indicators = currentData.map(row => ({
+                name: row[taskColumn],
+                max: 1
+            }));
+            
+            const seriesData = selectedPersons.map(person => {
+                return {
+                    name: person,
+                    value: currentData.map(row => row[person] || 0)
+                };
+            });
+            
+            const chart = echarts.init(container);
+            const option = {
+                backgroundColor: 'transparent',
+                legend: {
+                    data: selectedPersons,
+                    textStyle: {
+                        color: '#fff'
+                    }
+                },
+                radar: {
+                    indicator: indicators
+                },
+                series: [{
+                    type: 'radar',
+                    data: seriesData
+                }]
+            };
+            
+            chart.setOption(option);
+        }
+        
+        // 渲染热力图
+        function renderHeatmap(container) {
+            if (!container) return;
+            
+            const data = [];
+            
+            // 准备数据
+            currentData.forEach((row, taskIndex) => {
+                personColumns.forEach((person, personIndex) => {
+                    data.push([personIndex, taskIndex, row[person] || 0]);
+                });
+            });
+            
+            const chart = echarts.init(container);
+            const option = {
+                backgroundColor: 'transparent',
+                tooltip: {
+                    position: 'top'
+                },
+                xAxis: {
+                    type: 'category',
+                    data: personColumns,
+                    axisLabel: {
+                        color: '#fff'
+                    }
+                },
+                yAxis: {
+                    type: 'category',
+                    data: currentData.map(row => row[taskColumn]),
+                    axisLabel: {
+                        color: '#fff'
+                    }
+                },
+                visualMap: {
+                    min: 0,
+                    max: 1,
+                    calculable: true,
+                    orient: 'horizontal',
+                    textStyle: {
+                        color: '#fff'
+                    }
+                },
+                series: [{
+                    type: 'heatmap',
+                    data: data
+                }]
+            };
+            
+            chart.setOption(option);
+        }
+        
+        // 下载模板
+        function downloadTemplate() {
+            // 创建示例数据
+            const templateData = [
+                { "编号": 1, "明细": "任务A", "张三": 1, "李四": 0, "王五": 0 },
+                { "编号": 2, "明细": "任务B", "张三": 0, "李四": 1, "王五": 0 },
+                { "编号": 3, "明细": "任务C", "张三": 0, "李四": 0, "王五": 1 }
+            ];
+            
+            // 创建工作簿
+            const ws = XLSX.utils.json_to_sheet(templateData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "示例");
+            
+            // 生成Excel文件
+            XLSX.writeFile(wb, "技能覆盖分析模板.xlsx");
+        }
+        
+        // 保存数据
+        function saveData() {
+            if (currentData.length === 0) {
+                alert('没有数据可保存');
+                return;
+            }
+            
+            // 创建工作簿
+            const ws = XLSX.utils.json_to_sheet(currentData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "分析结果");
+            
+            // 生成Excel文件
+            XLSX.writeFile(wb, "技能覆盖分析结果.xlsx");
+        }
+    </script>
+</body>
+</html>
